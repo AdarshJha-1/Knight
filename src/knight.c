@@ -5,12 +5,19 @@
  * Time:         00:20:31
  * ========================================================== */
 
+#define _GNU_SOURCE // Unlocks all features on Linux (GCC/Clang)
+#define _POSIX_C_SOURCE 200112L
+
 #include "uthash.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 /*
     implementing only cli part now like
@@ -39,7 +46,6 @@ Blocked *block_list = NULL;
 
 // maybe i have to create a group for this program so this code is the only one who can perform operation on the txt file, which will give somewhat guarantee of not having inconsistent data
 
-// TODO: Load from blocked.txt to map (to persist the data)
 void load_from_file()
 {
     FILE *file = fopen(BLOCKED_FILE, "r");
@@ -69,7 +75,7 @@ void load_from_file()
 
     fclose(file);
 }
-// TODO: Add newly blocked domain or ip to the file (to persist the data)
+
 void save_to_file()
 {
     FILE *file = fopen(BLOCKED_FILE, "w");
@@ -87,10 +93,6 @@ void save_to_file()
     }
     fclose(file);
 }
-
-// TODO: Remove blocked domain or ip from the file.
-// void remove_from_file();
-// |-> not required in here as i am loading file once when program start and saving all the current state of config of blocked list into the file so the current state which is present inside RAM what we saving this state could have been modified any number of times like blocked, unblocked we don;t care only the last state we care about and we save that only.
 
 void block_domain_or_ip(char const *domain_or_ip)
 {
@@ -148,12 +150,35 @@ void show_block_list()
 
 bool is_valid_ip(char const *ip_addr)
 {
-    return true;
+    // how to check valid ip ??
+    // using C lib func
+    // should i check for both ipv4 and v6 either of them valid then valid ???
+    // doing as ugly practice i can :()
+    struct in_addr dst1, dst2;
+    int v4, v6;
+    v4 = inet_pton(AF_INET, ip_addr, &dst1);
+    v6 = inet_pton(AF_INET6, ip_addr, &dst2);
+    return v4 || v6;
 }
 
+// found online.....maybe i should learn more about POSIX N/W things
 bool is_valid_domain(char const *domain)
 {
-    return true;
+    struct addrinfo hints, *res;
+    int status;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    status = getaddrinfo(domain, NULL, &hints, &res);
+    if (status == 0)
+    {
+        freeaddrinfo(res);
+        return true;
+    }
+
+    freeaddrinfo(res);
+    return false;
 }
 
 int main(int argc, char const *argv[])
@@ -187,7 +212,7 @@ int main(int argc, char const *argv[])
         {
             if (!is_valid_ip(domain_or_ip))
             {
-                fprintf(stderr, "Invalid Domain/IP");
+                fprintf(stderr, "Invalid Domain/IP\n");
                 return EXIT_FAILURE;
             }
         }
@@ -231,23 +256,34 @@ int main(int argc, char const *argv[])
 }
 
 /*
-    // code i will use maybe
+Knight CLI - Command List
 
+1. knight og
+   - Creates original backup of /etc/hosts
+   - Stores it as /etc/hosts.knight.og
 
-    ----- FOR IP -----
-    https://stackoverflow.com/questions/791982/determine-if-a-string-is-a-valid-ipv4-address-in-c
-    https://thelinuxchannel.org/2023/12/c-code-to-check-valid-ip-address-ipv4-live-demo-and-example/
-    // Source - https://stackoverflow.com/a/792016
-    // Posted by Bill the Lizard, modified by community. See post 'Timeline' for change history
-    // Retrieved 2026-06-05, License - CC BY-SA 3.0
-    bool isValidIpAddress(char *ipAddress)
-    {
-        struct sockaddr_in sa;
-        int result = inet_pton(AF_INET, ipAddress, &(sa.sin_addr));
-        return result != 0;
-    }
+2. knight block <domain|ip>
+   - Adds domain or IP to block list
+   - Stores in memory + blocked.txt
 
-    ----- FOR DOMAIN -----
+3. knight unblock <domain|ip>
+   - Removes domain or IP from block list
+   - Updates blocked.txt
 
+4. knight apply
+   - Loads OG hosts file
+   - Merges with blocked list
+   - Removes duplicates
+   - Writes final result to /etc/hosts
 
+5. knight reset
+   - Restores /etc/hosts from OG backup
+   - Removes all knight applied changes
+
+6. knight backup
+   - Creates backup of current /etc/hosts
+   - Stores as /etc/hosts.knight.backup
+
+7. knight show
+   - Displays all blocked domains and IPs
 */
