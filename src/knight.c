@@ -18,11 +18,20 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <unistd.h>
 
 #define BLOCK "block"
 #define UNBLOCK "unblock"
 #define SHOW "show"
+#define OG "og"
+#define APPLY "apply"
+#define RESET "reset"
+#define BACKUP "backup"
+
 #define BLOCKED_FILE "blocked.txt"
+
+#define HOST_CONFIG_PATH "/etc/hosts"
+#define HOST_OG_CONFIG_PATH "/etc/hosts.knight.og"
 
 typedef struct
 {
@@ -127,7 +136,8 @@ void show_block_list()
 
 bool is_valid_ip(char const *ip_addr)
 {
-    struct in_addr dst1, dst2;
+    struct in_addr dst1;
+    struct in6_addr dst2;
     int v4, v6;
     v4 = inet_pton(AF_INET, ip_addr, &dst1);
     v6 = inet_pton(AF_INET6, ip_addr, &dst2);
@@ -136,7 +146,7 @@ bool is_valid_ip(char const *ip_addr)
 
 bool is_valid_domain(char const *domain)
 {
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res = NULL;
     int status;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
@@ -151,6 +161,102 @@ bool is_valid_domain(char const *domain)
 
     freeaddrinfo(res);
     return false;
+}
+
+// TODO: make an OG copy of the pre-defined /etc/hosts file and then use that + blocked.txt loaded data into map to make new /etc/hosts file content
+// user have to do this for the first time they use it like
+// ./knight og -> will create a /etc/hosts.knight.og
+// then user can apply the changes if they blocked or unblocked some domain or ip kike block block new state is create apply it into /etc/hosts
+// the new /etc/hosts file will be created like this
+
+// /etc/hosts
+// 1st load from og file
+// 2nd from the map
+
+// when use do reset only og config will be written to /etc/hosts
+
+void create_og_config()
+{
+    if (access(HOST_OG_CONFIG_PATH, F_OK) == 0)
+    {
+        fprintf(stderr, "OG config already exists.\n");
+        return;
+    }
+
+    FILE *src_file = fopen(HOST_CONFIG_PATH, "r");
+    if (src_file == NULL)
+    {
+        fprintf(stderr, "Failed to open /etc/hosts file: %s\n", strerror(errno));
+        return;
+    }
+    FILE *dest_file = fopen(HOST_OG_CONFIG_PATH, "w");
+    if (dest_file == NULL)
+    {
+        fclose(src_file);
+        fprintf(stderr, "Failed to open or create /etc/hosts.knight.og file: %s\n", strerror(errno));
+        return;
+    }
+
+    char buffer[1024];
+    size_t bytes_read = 0;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), src_file)) > 0)
+    {
+        size_t bytes_written = 0;
+        bytes_written = fwrite(buffer, 1, bytes_read, dest_file);
+        if (bytes_read != bytes_written)
+        {
+            fclose(src_file);
+            fclose(dest_file);
+            fprintf(stderr,
+                    "Failed to write to file '%s': %s\n",
+                    HOST_OG_CONFIG_PATH,
+                    strerror(errno));
+            return;
+        }
+    }
+
+    fclose(src_file);
+    fclose(dest_file);
+    printf("Created OG config at '%s'\n", HOST_OG_CONFIG_PATH);
+}
+
+void reset_to_og()
+{
+    FILE *src_file = fopen(HOST_OG_CONFIG_PATH, "r");
+    if (src_file == NULL)
+    {
+        fprintf(stderr, "Failed to open /etc/hosts.knight.og file: %s\n", strerror(errno));
+        return;
+    }
+    FILE *dest_file = fopen(HOST_CONFIG_PATH, "w");
+    if (dest_file == NULL)
+    {
+        fclose(src_file);
+        fprintf(stderr, "Failed to open /etc/hosts file: %s\n", strerror(errno));
+        return;
+    }
+
+    char buffer[1024];
+    size_t bytes_read = 0;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), src_file)) > 0)
+    {
+        size_t bytes_written = 0;
+        bytes_written = fwrite(buffer, 1, bytes_read, dest_file);
+        if (bytes_read != bytes_written)
+        {
+            fclose(src_file);
+            fclose(dest_file);
+            fprintf(stderr,
+                    "Failed to reset the file '%s': %s\n",
+                    HOST_CONFIG_PATH,
+                    strerror(errno));
+            return;
+        }
+    }
+
+    fclose(src_file);
+    fclose(dest_file);
+    printf("Reset to original configuration '%s'\n", HOST_CONFIG_PATH);
 }
 
 int main(int argc, char const *argv[])
@@ -169,6 +275,14 @@ int main(int argc, char const *argv[])
         if (strcmp(command, SHOW) == 0)
         {
             show_block_list();
+        }
+        else if (strcmp(command, OG) == 0)
+        {
+            create_og_config();
+        }
+        else if (strcmp(command, RESET) == 0)
+        {
+            reset_to_og();
         }
         else
         {

@@ -1,0 +1,5 @@
+have to learn about 
+
+POSIX -> for N/W
+access -> call
+
