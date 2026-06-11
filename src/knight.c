@@ -5,7 +5,7 @@
  * Time:         00:20:31
  * ========================================================== */
 
-#define _GNU_SOURCE // Unlocks all features on Linux (GCC/Clang)
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200112L
 
 #include "uthash.h"
@@ -18,18 +18,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-
-/*
-    implementing only cli part now like
-    $ ./knight block googl.com or some_ip
-    $ ./knight unblock googl.com or some_ip
-    $ ./knight block show -> this is not very well thought i am doing it like in block command if 2nd arg is show then show blocked list (i should change variable names to be more general)
-
-*/
-
-// what i will do in this prototyping is like have a struct with uthash.h UT_hash_handle included which will make it hashable
-// this struct will store an string domain/ip
-// add to hash means blocked, remove means unblock
 
 #define BLOCK "block"
 #define UNBLOCK "unblock"
@@ -44,8 +32,6 @@ typedef struct
 
 Blocked *block_list = NULL;
 
-// maybe i have to create a group for this program so this code is the only one who can perform operation on the txt file, which will give somewhat guarantee of not having inconsistent data
-
 void load_from_file()
 {
     FILE *file = fopen(BLOCKED_FILE, "r");
@@ -53,9 +39,7 @@ void load_from_file()
     {
         if (errno != ENOENT)
         {
-            fprintf(stderr,
-                    "Failed to open blocked config file: %s\n",
-                    strerror(errno));
+            fprintf(stderr, "Failed to open blocked config file: %s\n", strerror(errno));
         }
         return;
     }
@@ -81,9 +65,7 @@ void save_to_file()
     FILE *file = fopen(BLOCKED_FILE, "w");
     if (file == NULL)
     {
-        fprintf(stderr,
-                "Failed to open blocked config file: %s\n",
-                strerror(errno));
+        fprintf(stderr, "Failed to open blocked config file: %s\n", strerror(errno));
         return;
     }
     Blocked *entry;
@@ -133,7 +115,7 @@ void show_block_list()
     if (block_list == NULL)
     {
         printf("\nNothing is in the list, Block to see some.\n");
-        return; // early exit should i do this on C ??
+        return;
     }
     printf("\n********** Blocked Domain/IP List **********\n");
     Blocked *entry;
@@ -143,17 +125,8 @@ void show_block_list()
     }
 }
 
-// -------------- N/W related things i am thinking -----------------------
-/*
-    -> i can get either a Ip or a Domain i can add them simply but i will validate them i will do advance dns lookups in later version, for now simple is better
-*/
-
 bool is_valid_ip(char const *ip_addr)
 {
-    // how to check valid ip ??
-    // using C lib func
-    // should i check for both ipv4 and v6 either of them valid then valid ???
-    // doing as ugly practice i can :()
     struct in_addr dst1, dst2;
     int v4, v6;
     v4 = inet_pton(AF_INET, ip_addr, &dst1);
@@ -161,7 +134,6 @@ bool is_valid_ip(char const *ip_addr)
     return v4 || v6;
 }
 
-// found online.....maybe i should learn more about POSIX N/W things
 bool is_valid_domain(char const *domain)
 {
     struct addrinfo hints, *res;
@@ -206,7 +178,7 @@ int main(int argc, char const *argv[])
     }
     else if (argc == 3)
     {
-        char const *domain_or_ip = argv[2]; // it can have more good name....but idk what to call it :0
+        char const *domain_or_ip = argv[2];
 
         if (!is_valid_domain(domain_or_ip))
         {
@@ -225,13 +197,11 @@ int main(int argc, char const *argv[])
             }
             else
             {
-                // i have to check for valid domain_or_ip too
                 block_domain_or_ip(domain_or_ip);
             }
         }
         else if (strcmp(command, UNBLOCK) == 0)
         {
-            // i have to check for valid domain_or_ip here too
             unblock_domain_or_ip(domain_or_ip);
         }
         else
@@ -243,7 +213,6 @@ int main(int argc, char const *argv[])
 
     save_to_file();
 
-    // here i am cleaning up all the memory used
     Blocked *curr, *temp;
     HASH_ITER(hh, block_list, curr, temp)
     {
