@@ -32,6 +32,7 @@
 
 #define HOST_CONFIG_PATH "/etc/hosts"
 #define HOST_OG_CONFIG_PATH "/etc/hosts.knight.og"
+#define HOST_CONFIG_BACKUP "/etc/hosts.knight.backup"
 
 typedef struct
 {
@@ -163,18 +164,6 @@ bool is_valid_domain(char const *domain)
     return false;
 }
 
-// TODO: make an OG copy of the pre-defined /etc/hosts file and then use that + blocked.txt loaded data into map to make new /etc/hosts file content
-// user have to do this for the first time they use it like
-// ./knight og -> will create a /etc/hosts.knight.og
-// then user can apply the changes if they blocked or unblocked some domain or ip kike block block new state is create apply it into /etc/hosts
-// the new /etc/hosts file will be created like this
-
-// /etc/hosts
-// 1st load from og file
-// 2nd from the map
-
-// when use do reset only og config will be written to /etc/hosts
-
 void create_og_config()
 {
     if (access(HOST_OG_CONFIG_PATH, F_OK) == 0)
@@ -259,6 +248,105 @@ void reset_to_og()
     printf("Reset to original configuration '%s'\n", HOST_CONFIG_PATH);
 }
 
+void apply_config()
+{
+    FILE *og_config_file = fopen(HOST_OG_CONFIG_PATH, "r");
+    if (og_config_file == NULL)
+    {
+        fprintf(stderr, "Failed to open /etc/hosts.knight.og file: %s\n", strerror(errno));
+        return;
+    }
+
+    FILE *host_file = fopen(HOST_CONFIG_PATH, "w");
+    if (host_file == NULL)
+    {
+        fclose(og_config_file);
+        fprintf(stderr, "Failed to open /etc/hosts file: %s\n", strerror(errno));
+        return;
+    }
+
+    char buffer[1024];
+    size_t bytes_read = 0;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), og_config_file)) > 0)
+    {
+        size_t bytes_written = 0;
+        bytes_written = fwrite(buffer, 1, bytes_read, host_file);
+        if (bytes_read != bytes_written)
+        {
+            fclose(og_config_file);
+            fclose(host_file);
+            fprintf(stderr,
+                    "Failed to write to the file '%s': %s\n",
+                    HOST_CONFIG_PATH,
+                    strerror(errno));
+            return;
+        }
+    }
+    fclose(og_config_file);
+
+    char const *line_comment = "\n# Knight Managed Entries\n";
+    size_t line_comment_size = strlen(line_comment);
+    size_t line_comment_written_size = 0;
+
+    line_comment_written_size = fwrite(line_comment, 1, line_comment_size, host_file);
+    if (line_comment_size != line_comment_written_size)
+    {
+        fclose(host_file);
+        fprintf(stderr,
+                "Failed to write to the file '%s': %s\n",
+                HOST_CONFIG_PATH,
+                strerror(errno));
+        return;
+    }
+
+    Blocked *entry;
+    for (entry = block_list; entry != NULL; entry = entry->hh.next)
+    {
+        fprintf(host_file, "0.0.0.0 %s\n", entry->domain_or_ip);
+    }
+    fclose(host_file);
+    printf("Configuration apply to '%s' successfully\n", HOST_CONFIG_PATH);
+}
+
+void create_host_config_backup()
+{
+    FILE *src_file = fopen(HOST_CONFIG_PATH, "r");
+    if (src_file == NULL)
+    {
+        fprintf(stderr, "Failed to open /etc/hosts file: %s\n", strerror(errno));
+        return;
+    }
+    FILE *dest_file = fopen(HOST_CONFIG_BACKUP, "w");
+    if (dest_file == NULL)
+    {
+        fclose(src_file);
+        fprintf(stderr, "Failed to open or create /etc/hosts.knight.hosts file: %s\n", strerror(errno));
+        return;
+    }
+
+    char buffer[1024];
+    size_t bytes_read = 0;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), src_file)) > 0)
+    {
+        size_t bytes_written = 0;
+        bytes_written = fwrite(buffer, 1, bytes_read, dest_file);
+        if (bytes_read != bytes_written)
+        {
+            fclose(src_file);
+            fclose(dest_file);
+            fprintf(stderr,
+                    "Failed to write to file '%s': %s\n",
+                    HOST_CONFIG_BACKUP,
+                    strerror(errno));
+            return;
+        }
+    }
+
+    fclose(src_file);
+    fclose(dest_file);
+    printf("Created backup of config at '%s'\n", HOST_CONFIG_BACKUP);
+}
+
 int main(int argc, char const *argv[])
 {
     if (argc < 2 || argc > 3)
@@ -283,6 +371,14 @@ int main(int argc, char const *argv[])
         else if (strcmp(command, RESET) == 0)
         {
             reset_to_og();
+        }
+        else if (strcmp(command, APPLY) == 0)
+        {
+            apply_config();
+        }
+        else if (strcmp(command, BACKUP) == 0)
+        {
+            create_host_config_backup();
         }
         else
         {
@@ -341,32 +437,32 @@ int main(int argc, char const *argv[])
 /*
 Knight CLI - Command List
 
-1. knight og
+1. [x] knight og
    - Creates original backup of /etc/hosts
    - Stores it as /etc/hosts.knight.og
 
-2. knight block <domain|ip>
+2. [x] knight block <domain|ip>
    - Adds domain or IP to block list
    - Stores in memory + blocked.txt
 
-3. knight unblock <domain|ip>
+3. [x] knight unblock <domain|ip>
    - Removes domain or IP from block list
    - Updates blocked.txt
 
-4. knight apply
+4. [x] knight apply
    - Loads OG hosts file
    - Merges with blocked list
    - Removes duplicates
    - Writes final result to /etc/hosts
 
-5. knight reset
+5. [x] knight reset
    - Restores /etc/hosts from OG backup
    - Removes all knight applied changes
 
-6. knight backup
+6. [x] knight backup
    - Creates backup of current /etc/hosts
    - Stores as /etc/hosts.knight.backup
 
-7. knight show
+7. [x] knight show
    - Displays all blocked domains and IPs
 */
